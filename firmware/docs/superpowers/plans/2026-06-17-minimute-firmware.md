@@ -12,6 +12,8 @@
 
 **Working directory:** all paths are relative to `firmware/` (the PlatformIO project root inside the monorepo). Run all `pio` / `git` commands from there unless noted.
 
+**Toolchain note (constructors):** the native host compiler is Clang, which rejects a `Config cfg = {}` default argument when the nested `Config`'s default member initializers are needed within the enclosing class definition. So every core class with a `Config` uses two out-of-line constructors instead — `X();` and `explicit X(const Config&);` — declared in the header and defined in the `.cpp`. This is reflected in the code blocks below.
+
 **Commit convention:** every commit message ends with the trailer:
 ```
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
@@ -241,7 +243,8 @@ class GestureRecognizer {
     uint32_t veryLongMs = 3000;
   };
 
-  explicit GestureRecognizer(Config cfg = {}) : cfg_(cfg) {}
+  GestureRecognizer();
+  explicit GestureRecognizer(const Config& cfg);
 
   // Feed raw button level (true = pressed) at time `now` (ms). Call frequently.
   // Returns the event produced on this call, or None.
@@ -269,6 +272,10 @@ Create `lib/core/GestureRecognizer.cpp`:
 #include "GestureRecognizer.h"
 
 namespace mm {
+
+GestureRecognizer::GestureRecognizer() : cfg_() {}
+
+GestureRecognizer::GestureRecognizer(const Config& cfg) : cfg_(cfg) {}
 
 ButtonEvent GestureRecognizer::update(bool rawPressed, uint32_t now) {
   // --- debounce: commit a level only after it is stable for debounceMs ---
@@ -613,7 +620,8 @@ class PowerManager {
     uint32_t disconnectedTimeoutMs = 180000;   // 3 min disconnected -> DeepSleep
   };
 
-  explicit PowerManager(Config cfg = {}) : cfg_(cfg) {}
+  PowerManager();
+  explicit PowerManager(const Config& cfg);
 
   void noteActivity(uint32_t now);
   void setConnected(bool connected, uint32_t now);
@@ -642,6 +650,10 @@ Create `lib/core/PowerManager.cpp`:
 #include "PowerManager.h"
 
 namespace mm {
+
+PowerManager::PowerManager() : cfg_() {}
+
+PowerManager::PowerManager(const Config& cfg) : cfg_(cfg) {}
 
 void PowerManager::noteActivity(uint32_t now) {
   lastActivity_ = now;
@@ -793,7 +805,8 @@ class BatteryGauge {
     float    emaAlpha   = 0.2f;
   };
 
-  explicit BatteryGauge(Config cfg = {}) : cfg_(cfg) {}
+  BatteryGauge();
+  explicit BatteryGauge(const Config& cfg);
 
   void addSample(uint16_t milliVolts);
   uint16_t smoothedMilliVolts() const { return smoothed_; }
@@ -819,6 +832,10 @@ Create `lib/core/BatteryGauge.cpp`:
 #include "BatteryGauge.h"
 
 namespace mm {
+
+BatteryGauge::BatteryGauge() : cfg_() {}
+
+BatteryGauge::BatteryGauge(const Config& cfg) : cfg_(cfg) {}
 
 namespace {
 struct Point { uint16_t mv; uint8_t pct; };
