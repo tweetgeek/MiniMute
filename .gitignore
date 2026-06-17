@@ -1,0 +1,8 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+
+# Build artifacts are ignored per-package (see firmware/.gitignore)
