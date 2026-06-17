@@ -97,6 +97,7 @@ void BleLink::begin(const char* deviceName, const BleCallbacks& cb) {
 }
 
 void BleLink::startAdvertising() {
+  Bluefruit.Advertising.clearData();
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addService(gSvc);
@@ -112,9 +113,9 @@ bool BleLink::connected() const {
   return Bluefruit.connected() > 0;
 }
 
-void BleLink::notifyButton(uint8_t code, uint8_t seq) {
+bool BleLink::notifyButton(uint8_t code, uint8_t seq) {
   uint8_t payload[2] = {code, seq};
-  gButton.notify(payload, sizeof(payload));
+  return gButton.notify(payload, sizeof(payload));
 }
 
 void BleLink::updateBattery(uint8_t percent) {

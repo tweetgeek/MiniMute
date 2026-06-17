@@ -28,6 +28,8 @@ static uint8_t   buttonSeq = 0;
 static uint32_t  identifyUntil = 0;
 static uint32_t  lastBatteryRead = 0;
 static uint32_t  lastStatusByte = 0xFF;
+static volatile bool gForgetBondPending = false;
+static PowerState    gPrevPs = PowerState::Active;
 
 // --- BLE callbacks ---
 static void onIndicator(IndicatorState s) {
@@ -37,7 +39,7 @@ static void onIndicator(IndicatorState s) {
   power.noteActivity(millis());
 }
 static void onIdentify()  { identifyUntil = millis() + 3000; }
-static void onForget()    { ble.clearBondAndRepair(); }
+static void onForget()    { gForgetBondPending = true; }
 static void onConnected(bool up) {
   ledIn.connected = up;
   power.setConnected(up, millis());
@@ -69,17 +71,18 @@ void setup() {
 
 void loop() {
   uint32_t now = millis();
+  if (gForgetBondPending) { gForgetBondPending = false; ble.clearBondAndRepair(); }
 
   // 1) Button -> gesture
   ButtonEvent ev = gesture.update(button.isPressed(), now);
   if (ev != ButtonEvent::None) {
     power.noteActivity(now);
     if (ev == ButtonEvent::VeryLong) {
-      ble.clearBondAndRepair();          // local re-pair
+      gForgetBondPending = true;
     } else {
       uint8_t code;
       if (encodeButtonEvent(ev, code) && ble.connected()) {
-        ble.notifyButton(code, buttonSeq++);
+        if (ble.notifyButton(code, buttonSeq)) buttonSeq++;
         ble.requestFastParams();
       }
     }
@@ -100,7 +103,11 @@ void loop() {
   if (ps == PowerState::DeepSleep) {
     enterDeepSleep();                    // no return
   }
-  if (ps == PowerState::ConnectedIdle) ble.requestSlowParams();
+  if (ps != gPrevPs) {
+    if (ps == PowerState::ConnectedIdle) ble.requestSlowParams();
+    else if (ps == PowerState::Active)   ble.requestFastParams();
+    gPrevPs = ps;
+  }
   ledIn.deepSleep = false;
 
   // 4) Status notify on change

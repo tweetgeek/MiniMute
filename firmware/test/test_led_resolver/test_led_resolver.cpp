@@ -45,6 +45,11 @@ void test_low_battery_flash_overrides_base(void) {
   TEST_ASSERT_TRUE(P(LedColor::Red, LedMode::Solid) == resolveLed(in));  // flash window
 }
 
+void test_pairing_outranks_low_battery_flash(void) {
+  LedInputs in; in.connected = false; in.lowBatteryFlash = true;
+  TEST_ASSERT_TRUE(P(LedColor::Blue, LedMode::SlowBlink) == resolveLed(in));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -59,5 +64,6 @@ int main(int argc, char **argv) {
   RUN_TEST(test_idle_off);
   RUN_TEST(test_identify_overrides_everything);
   RUN_TEST(test_low_battery_flash_overrides_base);
+  RUN_TEST(test_pairing_outranks_low_battery_flash);
   return UNITY_END();
 }

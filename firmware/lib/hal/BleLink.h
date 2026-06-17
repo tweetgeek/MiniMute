@@ -19,7 +19,7 @@ class BleLink {
   void startAdvertising();
 
   bool connected() const;
-  void notifyButton(uint8_t code, uint8_t seq);          // Button Event notify
+  bool notifyButton(uint8_t code, uint8_t seq);          // Button Event notify
   void updateBattery(uint8_t percent);                   // BAS
   void updateStatus(uint8_t statusFlags);                // Device Status notify
   void clearBondAndRepair();                             // FORGET_BOND path
