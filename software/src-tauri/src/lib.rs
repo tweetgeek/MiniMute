@@ -1,6 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 pub mod protocol;
 pub mod devices;
+pub mod events;
+pub mod dispatch;
+pub mod ble;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
