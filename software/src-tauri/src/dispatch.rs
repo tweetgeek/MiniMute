@@ -28,6 +28,8 @@ impl Dispatcher {
         self.snapshot(id)
     }
     pub fn on_connected(&mut self, id: &str) -> Vec<AppEvent> {
+        // FIX 7: ensure device exists even if it wasn't previously discovered
+        if self.registry.get(id).is_none() { self.registry.upsert_discovered(id, "MiniMute"); }
         self.registry.set_connection(id, ConnectionKind::Connected, None);
         self.registry.mark_known(id, true);
         let mut ev = vec![self.log(Some(id), "in", "connected".into())];
@@ -61,7 +63,8 @@ impl Dispatcher {
                 ev.push(self.log(Some(id), "in", format!("battery {}%", pct)));
             }
         }
-        ev.extend(self.snapshot(id));
+        // MINOR: only emit device snapshot when something was recognized
+        if !ev.is_empty() { ev.extend(self.snapshot(id)); }
         ev
     }
 }

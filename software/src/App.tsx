@@ -21,7 +21,7 @@ export default function App() {
     return () => { un.then((f) => f()).catch(() => {}); };
   }, []);
 
-  const onScan = async () => { setScanning(true); await api.scanStart(); setTimeout(() => { api.scanStop(); setScanning(false); }, 8000); };
+  const onScan = async () => { if (scanning) return; setScanning(true); await api.scanStart(); setTimeout(() => { api.scanStop(); setScanning(false); }, 8000); };
   const onToggleAutostart = async (v: boolean) => { v ? await enable() : await disable(); setAutostart(v); };
 
   const handlers: DeviceHandlers = {

@@ -4,8 +4,9 @@ pub mod events;
 pub mod dispatch;
 pub mod ble;
 pub mod commands;
+pub mod persist;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 use tauri::{Emitter, Manager};
 use crate::ble::{BtleplugTransport, EventSink, SharedDispatcher};
@@ -16,6 +17,10 @@ use crate::commands::AppState;
 struct TauriSink { app: tauri::AppHandle }
 impl EventSink for TauriSink {
     fn emit(&self, event: &AppEvent) { let _ = self.app.emit("app-event", event); }
+}
+
+pub(crate) fn known_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("known_devices.json"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -43,7 +48,6 @@ pub fn run() {
 
             {
                 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-                use tauri::Manager;
                 let _tray = TrayIconBuilder::new()
                     .icon(app.default_window_icon().unwrap().clone())
                     .on_tray_icon_event(|tray, event| {
@@ -58,20 +62,36 @@ pub fn run() {
                     .build(app)?;
             }
 
+            // FIX 1: manage AppState synchronously before the spawn so commands
+            // work even when BLE transport isn't ready yet.
+            let app_state = AppState {
+                dispatcher: dispatcher_for_setup.clone(),
+                transport: OnceLock::new(),
+            };
+            app.manage(app_state);
+
             let handle = app.handle().clone();
             let disp = dispatcher_for_setup.clone();
             tauri::async_runtime::spawn(async move {
                 let sink: Arc<dyn EventSink> = Arc::new(TauriSink { app: handle.clone() });
-                match BtleplugTransport::new(disp.clone(), sink).await {
+
+                // FIX 3: load known devices from disk before constructing transport
+                let kp = known_path(&handle);
+                if let Some(ref p) = kp {
+                    let known = crate::persist::load(p);
+                    disp.lock().await.registry.load_known(known);
+                }
+
+                match BtleplugTransport::new(disp.clone(), sink, kp).await {
                     Ok(transport) => {
                         let t: Arc<dyn crate::ble::BleTransport> = transport;
-                        handle.manage(AppState { transport: t, dispatcher: disp });
-                        if let Some(state) = handle.try_state::<AppState>() {
-                            let _ = state.transport.start_scan().await;
-                        }
+                        let _ = handle.state::<AppState>().transport.set(t.clone());
+                        let _ = t.start_scan().await;
                     }
-                    Err(e) => { let _ = handle.emit("app-event",
-                        &AppEvent::BleState { available: false, reason: Some(e) }); }
+                    Err(e) => {
+                        let _ = handle.emit("app-event",
+                            &AppEvent::BleState { available: false, reason: Some(e) });
+                    }
                 }
             });
             Ok(())

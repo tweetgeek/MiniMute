@@ -32,14 +32,19 @@ pub struct BtleplugTransport {
     adapter: Adapter,
     dispatcher: SharedDispatcher,
     sink: Arc<dyn EventSink>,
+    known_path: Option<std::path::PathBuf>,
 }
 
 impl BtleplugTransport {
-    pub async fn new(dispatcher: SharedDispatcher, sink: Arc<dyn EventSink>) -> Result<Arc<Self>, String> {
+    pub async fn new(
+        dispatcher: SharedDispatcher,
+        sink: Arc<dyn EventSink>,
+        known_path: Option<std::path::PathBuf>,
+    ) -> Result<Arc<Self>, String> {
         let manager = Manager::new().await.map_err(|e| e.to_string())?;
         let adapters = manager.adapters().await.map_err(|e| e.to_string())?;
         let adapter = adapters.into_iter().next().ok_or("no BLE adapter")?;
-        let me = Arc::new(Self { adapter, dispatcher, sink });
+        let me = Arc::new(Self { adapter, dispatcher, sink, known_path });
         me.clone().spawn_event_loop().await?;
         Ok(me)
     }
@@ -51,6 +56,14 @@ impl BtleplugTransport {
             if p.id().to_string() == id { return Some(p); }
         }
         None
+    }
+
+    /// FIX 3: persist known devices to disk after every connect/forget.
+    async fn save_known(&self) {
+        if let Some(p) = &self.known_path {
+            let known = { self.dispatcher.lock().await.registry.known_devices() };
+            crate::persist::save(p, &known);
+        }
     }
 
     async fn spawn_event_loop(self: Arc<Self>) -> Result<(), String> {
@@ -75,6 +88,8 @@ impl BtleplugTransport {
                     CentralEvent::DeviceConnected(pid) => {
                         let evs = { this.dispatcher.lock().await.on_connected(&pid.to_string()) };
                         for e in &evs { this.sink.emit(e); }
+                        // FIX 3: save known list after marking device known on connect
+                        this.save_known().await;
                         let _ = this.clone().subscribe_all(&pid.to_string()).await;
                     }
                     CentralEvent::DeviceDisconnected(pid) => {
@@ -97,6 +112,19 @@ impl BtleplugTransport {
                 let _ = p.subscribe(&ch).await;
             }
         }
+
+        // FIX 5: initial read of Status + Battery after subscribe
+        for ch in p.characteristics() {
+            if ch.uuid == Self::parse_uuid(crate::protocol::CHAR_STATUS_UUID)
+                || ch.uuid == Self::parse_uuid(crate::protocol::BATTERY_LEVEL_UUID)
+            {
+                if let Ok(val) = p.read(&ch).await {
+                    let evs = { self.dispatcher.lock().await.on_notification(id, &ch.uuid.to_string(), &val) };
+                    for e in &evs { self.sink.emit(e); }
+                }
+            }
+        }
+
         let id_owned = id.to_string();
         let this = self.clone();
         let mut notifs = p.notifications().await.map_err(|e| e.to_string())?;
