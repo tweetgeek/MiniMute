@@ -1,51 +1,46 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+import { useStore } from "./store";
+import { api, startEventBridge } from "./bridge";
+import { DeviceCard, type DeviceHandlers } from "./components/DeviceCard";
+import { EventLog } from "./components/EventLog";
+import { ScanBar } from "./components/ScanBar";
+import { Header } from "./components/Header";
+import { enable, isEnabled, disable } from "@tauri-apps/plugin-autostart";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+export default function App() {
+  const devices = useStore((s) => Object.values(s.devices));
+  const log = useStore((s) => s.log);
+  const ble = useStore((s) => s.ble);
+  const [scanning, setScanning] = useState(false);
+  const [autostart, setAutostart] = useState(false);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    const un = startEventBridge();
+    isEnabled().then(setAutostart).catch(() => {});
+    return () => { un.then((f) => f()).catch(() => {}); };
+  }, []);
+
+  const onScan = async () => { setScanning(true); await api.scanStart(); setTimeout(() => { api.scanStop(); setScanning(false); }, 8000); };
+  const onToggleAutostart = async (v: boolean) => { v ? await enable() : await disable(); setAutostart(v); };
+
+  const handlers: DeviceHandlers = {
+    indicator: (id, m, c, i) => { api.sendIndicator(id, m, c, i); },
+    control: (id, cmd) => { api.sendControl(id, cmd); },
+    disconnect: (id) => { api.disconnect(id); },
+    forget: (id) => { api.forget(id); },
+  };
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="app">
+      <Header bleAvailable={ble.available} bleReason={ble.reason} autostart={autostart}
+        onToggleAutostart={onToggleAutostart} onQuit={() => api.quit()} />
+      <ScanBar scanning={scanning} onScan={onScan} />
+      <div className="device-list">
+        {devices.length === 0 ? <p className="empty">No devices. Click Scan.</p>
+          : devices.map((d) => <DeviceCard key={d.id} device={d} on={handlers} />)}
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <EventLog log={log} />
+    </div>
   );
 }
-
-export default App;
