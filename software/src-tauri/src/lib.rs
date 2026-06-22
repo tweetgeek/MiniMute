@@ -27,7 +27,37 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                tauri::WindowEvent::Focused(false) => { let _ = window.hide(); }
+                _ => {}
+            }
+        })
         .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            {
+                use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+                use tauri::Manager;
+                let _tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click { .. } = event {
+                            let app = tray.app_handle();
+                            if let Some(win) = app.get_webview_window("main") {
+                                if win.is_visible().unwrap_or(false) { let _ = win.hide(); }
+                                else { let _ = win.show(); let _ = win.set_focus(); }
+                            }
+                        }
+                    })
+                    .build(app)?;
+            }
+
             let handle = app.handle().clone();
             let disp = dispatcher_for_setup.clone();
             tauri::async_runtime::spawn(async move {
@@ -50,6 +80,7 @@ pub fn run() {
             commands::list_devices, commands::scan_start, commands::scan_stop,
             commands::connect_device, commands::disconnect_device, commands::forget_device,
             commands::send_indicator, commands::send_control,
+            commands::quit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

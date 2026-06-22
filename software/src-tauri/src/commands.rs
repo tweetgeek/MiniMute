@@ -45,3 +45,6 @@ pub async fn send_control(state: State<'_, AppState>, id: String, command: Strin
     };
     state.transport.write_char(&id, CHAR_CONTROL_UUID, &[encode_control(cmd)], true).await
 }
+
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) { app.exit(0); }
